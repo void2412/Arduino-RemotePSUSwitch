@@ -80,6 +80,7 @@ void configurePins();
 bool isPinShortedToGround(uint8_t idx);
 void shortPinToGround(uint8_t idx);
 void disconnectPin(uint8_t idx);
+void logPinCommand(uint8_t idx, const String &action, bool wasShorted, bool performed);
 String boardIpAddress();
 void waitForDoubleResetWindow();
 void maybeClearDoubleResetMarker();
@@ -330,6 +331,30 @@ void disconnectPin(uint8_t idx) {
   pinDrivenToGround[idx] = false;
 }
 
+void logPinCommand(uint8_t idx, const String &action, bool wasShorted, bool performed) {
+  Serial.print("Route /");
+  Serial.print(pinConfigs[idx].name);
+  Serial.print("/");
+  Serial.print(action);
+  Serial.print(" on ");
+  Serial.print(AVAILABLE_PINS[idx].label);
+  Serial.print(": current state is ");
+  Serial.print(wasShorted ? "on/shorted-to-ground" : "off/disconnected");
+  Serial.print("; ");
+
+  if (performed) {
+    Serial.print("performing action, ");
+    if (action == "on") {
+      Serial.println("shorting pin to ground.");
+    } else {
+      Serial.println("disconnecting pin.");
+    }
+  } else {
+    Serial.print("ignoring command because state is already ");
+    Serial.println(action == "on" ? "on." : "off.");
+  }
+}
+
 String boardIpAddress() {
   IPAddress ip = WiFi.localIP();
   return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]);
@@ -465,17 +490,21 @@ void handleHttpClient(WiFiClient &client) {
     }
 
     if (action == "on") {
-      if (!isPinShortedToGround(idx)) {
+      bool wasShorted = isPinShortedToGround(idx);
+      if (!wasShorted) {
         shortPinToGround(idx);
       }
+      logPinCommand(idx, action, wasShorted, !wasShorted);
       sendPinState(client, idx);
       return;
     }
 
     if (action == "off") {
-      if (isPinShortedToGround(idx)) {
+      bool wasShorted = isPinShortedToGround(idx);
+      if (wasShorted) {
         disconnectPin(idx);
       }
+      logPinCommand(idx, action, wasShorted, wasShorted);
       sendPinState(client, idx);
       return;
     }
